@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Barking Lizards Technologies - Truth Or Square PSP Viewer</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+
+    <style>
+        :root { --bg-dark: #1e1e1e; --bg-panel: #252526; --accent: #0e639c; --text: #cccccc; --text-light: #ffffff; --border: #3e3e42; }
+        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-dark); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
+        
+        #sidebar { width: 360px; background: var(--bg-panel); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 10; }
+        .header { padding: 12px 15px; background: #333337; font-weight: bold; color: var(--text-light); font-size: 14px; text-transform: uppercase; }
+        .controls-box { padding: 15px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+        input[type="file"], input[type="text"], input[type="number"], select, button { width: 100%; box-sizing: border-box; background: var(--bg-dark); color: var(--text-light); border: 1px solid var(--border); padding: 6px; border-radius: 4px; font-family: inherit; font-size: 13px; }
+        button { background: var(--accent); font-weight: bold; cursor: pointer; border: none; transition: 0.2s; padding: 8px; }
+        button:hover { background: #1177bb; }
+        button.action-btn { background: #2b8a3e; margin-top: 5px; }
+        button.action-btn:hover { background: #3bc954; }
+        button.export-btn { background: #9c27b0; margin-top: 5px; }
+        button.export-btn:hover { background: #ba68c8; }
+        .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #4ec9b0; margin-top: 5px; background: #1e1e1e; padding: 6px; border-radius: 4px; border: 1px solid var(--border); }
+
+        #fileList { flex-grow: 1; overflow-y: auto; padding: 0; margin: 0; list-style: none; }
+        .file-item { padding: 8px 15px; border-bottom: 1px solid #2d2d30; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 10px; }
+        .file-item:hover { background-color: #2a2d2e; }
+        .file-item.active { background-color: #04395e; color: white; border-left: 4px solid #007acc; padding-left: 11px; }
+
+        #main { flex-grow: 1; display: flex; flex-direction: column; position: relative; }
+        #toolbar { height: 45px; background-color: var(--bg-panel); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 15px; gap: 8px; }
+        .tab { padding: 6px 15px; cursor: pointer; background: var(--bg-dark); border: 1px solid var(--border); border-radius: 4px; font-size: 13px; font-weight: 500; }
+        .tab.active { background: var(--accent); border-color: var(--accent); color: white; }
+        .view-container { flex-grow: 1; position: relative; display: none; overflow: hidden; background: #111; }
+        .view-container.active { display: block; }
+        
+        .re-panel { position: absolute; top: 15px; right: 15px; background: rgba(30,30,30,0.9); border: 1px solid var(--border); padding: 12px; border-radius: 6px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: 280px; display: flex; flex-direction: column; gap: 8px; max-height: 90vh; overflow-y: auto; }
+        .re-panel label { font-size: 12px; color: #aaa; display: flex; justify-content: space-between; align-items: center; }
+        .re-panel select { width: 130px; }
+        .section-header { font-weight: bold; font-size: 11px; color: #4ec9b0; border-bottom: 1px solid #444; margin-top: 5px; padding-bottom: 2px; text-transform: uppercase; }
+        
+        #hexViewer { font-family: Consolas, monospace; font-size: 13px; padding: 15px; overflow: auto; white-space: pre; height: 100%; box-sizing: border-box; }
+        .hex-addr { color: #569cd6; margin-right: 15px; } .hex-data { color: #d4d4d4; } .hex-ascii { color: #ce9178; margin-left: 15px; }
+        .hex-byte { cursor: pointer; transition: 0.1s; padding: 0 1px; border-radius: 2px; }
+        .hex-byte:hover { background: var(--accent); color: white; }
+
+        #hexInspector { position: absolute; bottom: 20px; right: 20px; background: #252526; border: 1px solid var(--border); padding: 15px; border-radius: 5px; color: #fff; display: none; box-shadow: 0 5px 20px rgba(0,0,0,0.8); z-index: 100; min-width: 220px; }
+        
+        #viewport3D { width: 100%; height: 100%; }
+        #info-overlay { position: absolute; top: 15px; left: 15px; pointer-events: none; background: rgba(0,0,0,0.85); padding: 12px; border-radius: 6px; font-size: 13px; color: #4ec9b0; font-family: Consolas, monospace; white-space: pre-wrap; border: 1px solid #333; text-shadow: 1px 1px 2px #000; max-width: 450px; z-index: 1000; }
+        
+        #textureViewer { display: flex; justify-content: center; align-items: center; height: 100%; flex-direction: column; background: #222; overflow: auto; }
+        canvas { background: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAOklEQVQYV2NkYGAwYkAD////Z4QxMIxKBxUwMjKCCUB8kIUwG0nThbCR5E2E20nUBMLdRJQGwgNBBQBTnBYz0M4lpgAAAABJRU5ErkJggg=='); image-rendering: pixelated; box-shadow: 0px 10px 30px rgba(0,0,0,0.8); border: 1px solid #555; }
+        ::-webkit-scrollbar { width: 10px; height: 10px; } ::-webkit-scrollbar-track { background: var(--bg-dark); } ::-webkit-scrollbar-thumb { background: #424242; border-radius: 5px; } ::-webkit-scrollbar-thumb:hover { background: #4f4f4f; }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <div class="header">Truth or Square PSP Toolkit</div>
+        <div class="controls-box">
+            <input type="file" id="fileInput" accept=".pkg">
+            <button id="btnMap" class="action-btn">🗺️ Generate Entity Map</button>
+            
+            <div class="checkbox-row" id="mapScaleContainer" style="display: none; flex-direction: column; align-items: flex-start; background: #2d2d30; border-color: #555;">
+                <label style="font-size:12px; color:#fff; width:100%; display:flex; justify-content:space-between;">
+                    Global Entity Scale: <span id="entScaleVal" style="color:#4ec9b0; font-weight:bold;">1.00</span>
+                </label>
+                <input type="range" id="globalEntScale" min="0.01" max="50" step="0.01" value="1.0" style="width:100%">
+            </div>
+
+            <div class="checkbox-row">
+                <input type="checkbox" id="mnfFilterToggle" style="width: auto;"> 
+                <label for="mnfFilterToggle" style="cursor: pointer;">Filter .ent by Active .mnf</label>
+            </div>
+        </div>
+        <div class="controls-box" style="border-top: none;">
+            <input type="text" id="searchInput" placeholder="Search files...">
+            <select id="sortSelect">
+                <option value="stream">Sort by: Stream Order</option>
+                <option value="name">Sort by: Name (A-Z)</option>
+                <option value="type">Sort by: File Type</option>
+            </select>
+        </div>
+        <ul id="fileList"></ul>
+    </div>
+
+    <div id="main">
+        <div id="toolbar">
+            <div class="tab active" data-target="view-3d" id="tab3d">3D Model Viewer</div>
+            <div class="tab" data-target="view-tex" id="tabTex">Texture Viewer</div>
+            <div class="tab" data-target="view-hex">Raw Hex Viewer</div>
+        </div>
+
+        <div id="view-3d" class="view-container active">
+            <div id="viewport3D"></div>
+            <div id="info-overlay">Load a .pkg file...</div>
+            <div class="re-panel" id="meshSettingsPanel">
+                <div style="font-weight:bold; font-size:14px; margin-bottom:5px; color:#fff;">Live Mesh Settings</div>
+                <div class="section-header">Display</div>
+                <label>Draw Mode: 
+                    <select id="meshDrawMode" class="live-mesh">
+                        <option value="solid">Solid Mapped</option>
+                        <option value="wireframe">Wireframe</option>
+                        <option value="points">Point Cloud</option>
+                    </select>
+                </label>
+                <button id="btnExportOBJ" class="export-btn" style="margin-top: 10px;">💾 Export as .OBJ</button>
+            </div>
+        </div>
+
+        <div id="view-tex" class="view-container">
+            <div id="textureViewer"><canvas id="texCanvas"></canvas></div>
+            <div class="re-panel">
+                <div style="font-weight:bold; font-size:14px; margin-bottom:5px; color:#fff;">Live Texture Settings</div>
+                <label>Format:
+                    <select id="texFormat" class="live-tex">
+                        <option value="auto">Auto-Detect</option>
+                        <option value="4bit">4-Bit Palette</option>
+                        <option value="8bit">8-Bit Palette</option>
+                        <option value="16bit">Raw 16-Bit</option>
+                    </select>
+                </label>
+                
+                <label>16-Bit Color Mode:
+                    <select id="tex16Mode" class="live-tex">
+                        <option value="auto">Auto-Detect</option>
+                        <option value="rgba4444">RGBA 4444 (Standard)</option>
+                        <option value="rgb565">RGB 5650 (No Alpha)</option>
+                        <option value="rgba5551">RGBA 5551 (1-Bit Alpha)</option>
+                    </select>
+                </label>
+
+                <label>Color Order: 
+                    <select id="texColorOrder" class="live-tex">
+                        <option value="rgba">Standard (RGBA)</option>
+                        <option value="bgra">PlayStation (BGRA Swap)</option>
+                        <option value="abgr">ABGR Order</option>
+                    </select>
+                </label>
+                <label>PSP Swizzle: 
+                    <select id="texSwizzle" class="live-tex">
+                        <option value="yes">Enabled</option>
+                        <option value="no">Disabled</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        <div id="view-hex" class="view-container">
+            <div id="hexViewer">Select a file to view hex data.</div>
+            <div id="hexInspector">
+                <h4 style="margin:0 0 10px 0; border-bottom:1px solid #444; padding-bottom:5px;">Data Inspector</h4>
+                <div style="display:grid; grid-template-columns: 60px 1fr; gap:5px; font-size:13px;">
+                    <span style="color:#aaa;">Offset:</span> <span id="inspOffset" style="color:#569cd6;">-</span>
+                    <span style="color:#aaa;">Int8:</span> <span id="inspInt8">-</span>
+                    <span style="color:#aaa;">Int16:</span> <span id="inspInt16">-</span>
+                    <span style="color:#aaa;">Int32:</span> <span id="inspInt32">-</span>
+                    <span style="color:#aaa;">Float:</span> <span id="inspFloat">-</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const container3D = document.getElementById('viewport3D');
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, container3D.clientWidth / container3D.clientHeight, 0.1, 100000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(container3D.clientWidth, container3D.clientHeight);
+        renderer.setClearColor(0x111111, 1);
+        container3D.appendChild(renderer.domElement);
+        
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        
+        scene.add(new THREE.AxesHelper(50));
+        scene.add(new THREE.GridHelper(500, 50, 0x444444, 0x222222));
+        
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight.position.set(100, 200, 50);
+        scene.add(dirLight);
+        scene.add(new THREE.AmbientLight(0x808080)); 
+
+        let pointCloud = null;
+        let extractedFiles =[];
+        let currentFile = null;
+        let currentVertices =[]; 
+        let currentUVs =[];
+        let currentNormals =[];
+        
+        window.activeTexture = null;
+        window.activeManifest = new Set();
+        window.isEntityMapActive = false;
+        window.geometryCache = {};
+        window.textureCache = {};
+        window.parsedSubmeshes = null;
+        window.currentIndices =[];
+
+        function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+        animate();
+
+        window.addEventListener('resize', () => {
+            if(!container3D.clientWidth) return;
+            camera.aspect = container3D.clientWidth / container3D.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container3D.clientWidth, container3D.clientHeight);
+        });
+
+        function is3DFile(filename) {
+            if (!filename) return false;
+            const ext = filename.split('.').pop().toLowerCase();
+            return['msh', 'ang', 'csa'].includes(ext);
+        }
+
+        document.querySelectorAll('.live-mesh').forEach(el => {
+            el.addEventListener('change', () => { if(currentFile && is3DFile(currentFile.name)) customMeshRender(currentFile); });
+        });
+        document.querySelectorAll('.live-tex').forEach(el => {
+            el.addEventListener('change', () => { if(currentFile) renderActiveTextureFile(currentFile); });
+        });
+
+        document.getElementById('mnfFilterToggle').addEventListener('change', () => {
+            updateFileList();
+            if(window.isEntityMapActive) document.getElementById('btnMap').click();
+        });
+        
+        document.getElementById('searchInput').addEventListener('input', updateFileList);
+        document.getElementById('sortSelect').addEventListener('change', updateFileList);
+
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.view-container').forEach(v => v.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(tab.getAttribute('data-target')).classList.add('active');
+            });
+        });
+
+        document.getElementById('btnExportOBJ').addEventListener('click', () => {
+            if (!currentVertices || currentVertices.length === 0) return alert("No mesh data to export!");
+            let obj = "# Exported from TRUTH OR SQUARE PSP Viewer\n";
+            let mtl = "";
+            let matSet = new Set();
+            let safeBase = currentFile ? currentFile.name.replace(/\.[^/.]+$/, "") : "mesh";
+            
+            obj += `mtllib ${safeBase}.mtl\n\n`;
+
+            for (let i = 0; i < currentVertices.length; i += 3) obj += `v ${currentVertices[i].toFixed(6)} ${currentVertices[i+1].toFixed(6)} ${currentVertices[i+2].toFixed(6)}\n`;
+            if (currentUVs.length > 0) {
+                for (let i = 0; i < currentUVs.length; i += 2) obj += `vt ${currentUVs[i].toFixed(6)} ${(1.0 - currentUVs[i+1]).toFixed(6)}\n`; 
+            }
+            if (currentNormals.length > 0) {
+                for (let i = 0; i < currentNormals.length; i += 3) obj += `vn ${currentNormals[i].toFixed(6)} ${currentNormals[i+1].toFixed(6)} ${currentNormals[i+2].toFixed(6)}\n`;
+            }
+            
+            if (window.parsedSubmeshes) {
+                for (let m = 0; m < window.parsedSubmeshes.length; m++) {
+                    let sm = window.parsedSubmeshes[m];
+                    if (sm.faces.length === 0) continue;
+                    
+                    let texName = window.parsedMaterials[sm.mat_idx] || "Default_Material";
+                    let safeTexName = texName.split('.')[0];
+                    let matName = `Mat${sm.mat_idx}_${safeTexName}`;
+
+                    if (!matSet.has(matName)) {
+                        matSet.add(matName);
+                        mtl += `newmtl ${matName}\nKd 1.0 1.0 1.0\nd 1.0\nmap_Kd ${texName}\n\n`;
+                    }
+
+                    obj += `g ${sm.name}\nusemtl ${matName}\n`;
+                    for (let f = 0; f < sm.faces.length; f += 3) {
+                        let i1 = sm.faces[f] + 1, i2 = sm.faces[f+1] + 1, i3 = sm.faces[f+2] + 1;
+                        if (currentUVs.length > 0 && currentNormals.length > 0) obj += `f ${i1}/${i1}/${i1} ${i2}/${i2}/${i2} ${i3}/${i3}/${i3}\n`;
+                        else if (currentUVs.length > 0) obj += `f ${i1}/${i1} ${i2}/${i2} ${i3}/${i3}\n`;
+                        else obj += `f ${i1} ${i2} ${i3}\n`;
+                    }
+                }
+            }
+
+            // Download OBJ
+            const blobObj = new Blob([obj], {type: "text/plain"});
+            const a1 = document.createElement("a");
+            a1.href = URL.createObjectURL(blobObj);
+            a1.download = safeBase + "_Textured.obj";
+            a1.click();
+            
+            // Download MTL
+            const blobMtl = new Blob([mtl], {type: "text/plain"});
+            const a2 = document.createElement("a");
+            a2.href = URL.createObjectURL(blobMtl);
+            a2.download = safeBase + ".mtl";
+            a2.click();
+        });
+
+        function readFixedString(u8, offset, maxLength) {
+            let str = "";
+            for(let i = 0; i < maxLength; i++) {
+                if(offset + i >= u8.length || u8[offset + i] === 0) break;
+                str += String.fromCharCode(u8[offset + i]);
+            }
+            return str.trim();
+        }
+
+        function findTextureForMaterial(matName) {
+            if (!matName || matName === "Default_Material") return null;
+            let base = matName.toLowerCase().replace(/\.rtf$/i, '').trim();
+            if (!base) return null;
+            
+            let tex = getTextureSilently(base + '.rtf');
+            if (tex) return tex;
+            
+            let possibleFile = extractedFiles.find(f => f.name.toLowerCase().endsWith('.rtf') && f.name.toLowerCase().startsWith(base));
+            if (possibleFile) return getTextureSilently(possibleFile.name);
+
+            possibleFile = extractedFiles.find(f => f.name.toLowerCase().endsWith('.rtf') && f.name.toLowerCase().includes(base));
+            if (possibleFile) return getTextureSilently(possibleFile.name);
+            
+            return null;
+        }
+
+        // --- TEXTURE PARSING ENGINE ---
+        function unswizzlePSP(src, width, height, bpp) {
+            let out = new Uint8Array(width * height * bpp / 8); let rowBlocks = (width * bpp / 8) / 16;
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < (width * bpp / 8); x++) {
+                    let blockX = Math.floor(x / 16), blockY = Math.floor(y / 8), px = x % 16, py = y % 8;
+                    let blockIdx = blockY * rowBlocks + blockX, srcIdx = blockIdx * 128 + py * 16 + px, dstIdx = y * (width * bpp / 8) + x;
+                    if (srcIdx < src.length && dstIdx < out.length) out[dstIdx] = src[srcIdx];
+                }
+            } return out;
+        }
+
+        function decode16BitPixel(c, mode) {
+            let r, g, b, a;
+            if (mode === 'rgb565') { r = Math.round((c & 0x1F) * 8.2258); g = Math.round(((c >> 5) & 0x3F) * 4.0476); b = Math.round(((c >> 11) & 0x1F) * 8.2258); a = 255; } 
+            else if (mode === 'rgba5551') { r = Math.round((c & 0x1F) * 8.2258); g = Math.round(((c >> 5) & 0x1F) * 8.2258); b = Math.round(((c >> 10) & 0x1F) * 8.2258); a = (c & 0x8000) ? 255 : 0; } 
+            else { r = (c & 0xF) * 17; g = ((c >> 4) & 0xF) * 17; b = ((c >> 8) & 0xF) * 17; a = ((c >> 12) & 0xF) * 17; }
+            return[r, g, b, a];
+        }
+
+        function parseTextureToCache(file, formatMode, format16, colorOrder, doSwizzle) {
+            const u8 = file.data; 
+            const view = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+            if(u8.length < 16) return null;
+            let width = view.getUint16(4, true); let height = view.getUint16(6, true);
+            if(width === 0 || height === 0 || width > 2048) { width = 128; height = 128; }
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = width; canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            let imgData = ctx.createImageData(width, height);
+
+            const palSize = view.getUint16(12, true);
+            const texTypeFlag = u8[8];  
+            const colorFmtFlag = u8[9]; 
+
+            if(formatMode === 'auto') { 
+                if (palSize === 64 || palSize === 32 || texTypeFlag === 0x08) formatMode = '4bit'; 
+                else if (palSize === 1024 || palSize === 512 || texTypeFlag === 0x09) formatMode = '8bit'; 
+                else formatMode = '16bit'; 
+            }
+
+            if(format16 === 'auto') {
+                if (colorFmtFlag === 0x0D) format16 = 'rgb565';
+                else if (colorFmtFlag === 0x0C) format16 = 'rgba4444';
+                else format16 = 'rgba4444'; 
+            }
+
+            try {
+                function getColor(r, g, b, a) { 
+                    if(colorOrder === 'bgra') return[b, g, r, a]; 
+                    if(colorOrder === 'abgr') return[a, b, g, r]; 
+                    return[r, g, b, a]; 
+                }
+                if (formatMode === '4bit') {
+                    let is16BitPal = (palSize === 32); let palette =[]; let pOffset = 16;
+                    for(let i=0; i<16; i++) {
+                        if (is16BitPal) { let cols = decode16BitPixel(view.getUint16(pOffset + (i*2), true), format16); palette.push(getColor(cols[0], cols[1], cols[2], cols[3])); } 
+                        else { let r = u8[pOffset+(i*4)], g = u8[pOffset+(i*4)+1], b = u8[pOffset+(i*4)+2], a = u8[pOffset+(i*4)+3]; palette.push(getColor(r, g, b, a===0x80?255:a)); }
+                    }
+                    let dataStart = 16 + (is16BitPal ? 32 : 64); let targetArr = doSwizzle ? unswizzlePSP(u8.slice(dataStart), width, height, 4) : u8.slice(dataStart); let pxIdx = 0;
+                    for(let i=0; i < targetArr.length; i++) { let p1 = targetArr[i] & 0x0F, p2 = (targetArr[i] >> 4) & 0x0F; imgData.data.set(palette[p1], pxIdx); pxIdx += 4; imgData.data.set(palette[p2], pxIdx); pxIdx += 4; }
+                } else if (formatMode === '8bit') {
+                    let is16BitPal = (palSize === 512); let palette =[]; let pOffset = 16;
+                    for(let i=0; i<256; i++) {
+                        if (is16BitPal) { let cols = decode16BitPixel(view.getUint16(pOffset + (i*2), true), format16); palette.push(getColor(cols[0], cols[1], cols[2], cols[3])); } 
+                        else { let r = u8[pOffset+(i*4)], g = u8[pOffset+(i*4)+1], b = u8[pOffset+(i*4)+2], a = u8[pOffset+(i*4)+3]; palette.push(getColor(r, g, b, a===0x80?255:a)); }
+                    }
+                    let dataStart = 16 + (is16BitPal ? 512 : 1024); let targetArr = doSwizzle ? unswizzlePSP(u8.slice(dataStart), width, height, 8) : u8.slice(dataStart); let pxIdx = 0;
+                    for(let i=0; i < (width*height); i++) { imgData.data.set(palette[targetArr[i] || 0], pxIdx); pxIdx += 4; }
+                } else if (formatMode === '16bit') {
+                    let targetArr = doSwizzle ? unswizzlePSP(u8.slice(16), width, height, 16) : u8.slice(16); const tv = new DataView(targetArr.buffer); let pxIdx = 0;
+                    for(let i=0; i < (width*height)*2; i+=2) { if (i >= tv.byteLength) break; let cols = decode16BitPixel(tv.getUint16(i, true), format16); imgData.data.set(getColor(cols[0], cols[1], cols[2], cols[3]), pxIdx); pxIdx += 4; }
+                }
+                ctx.putImageData(imgData, 0, 0); 
+                
+                let safeName = file.name.toLowerCase();
+                let tex = window.textureCache[safeName];
+                if(!tex) {
+                    tex = new THREE.CanvasTexture(canvas);
+                    tex.wrapS = THREE.RepeatWrapping; 
+                    tex.wrapT = THREE.RepeatWrapping; 
+                    tex.magFilter = THREE.LinearFilter; 
+                    tex.minFilter = THREE.LinearFilter;
+                    tex.colorSpace = THREE.SRGBColorSpace;
+                    window.textureCache[safeName] = tex;
+                } else {
+                    tex.image = canvas;
+                    tex.needsUpdate = true;
+                }
+                return tex;
+            } catch(e) { return null; }
+        }
+
+        function getTextureSilently(filename) {
+            if(!filename) return null;
+            let safeName = filename.toLowerCase();
+            if(window.textureCache[safeName]) return window.textureCache[safeName];
+
+            let file = extractedFiles.find(f => f.name.toLowerCase() === safeName);
+            if(!file) return null;
+            
+            return parseTextureToCache(file, 'auto', 'auto', 'rgba', true);
+        }
+
+        function renderActiveTextureFile(file) {
+            let formatMode = document.getElementById('texFormat').value;
+            let format16 = document.getElementById('tex16Mode').value;
+            let colorOrder = document.getElementById('texColorOrder').value;
+            let doSwizzle = document.getElementById('texSwizzle').value === 'yes';
+
+            let tex = parseTextureToCache(file, formatMode, format16, colorOrder, doSwizzle);
+            
+            if(tex) {
+                const canvas = document.getElementById('texCanvas'); 
+                const ctx = canvas.getContext('2d');
+                canvas.width = tex.image.width; 
+                canvas.height = tex.image.height; 
+                canvas.style.width = (canvas.width < 128 ? canvas.width * 3 : canvas.width * 2) + "px"; 
+                canvas.style.height = (canvas.height < 128 ? canvas.height * 3 : canvas.height * 2) + "px";
+                ctx.drawImage(tex.image, 0, 0);
+                
+                window.activeTexture = tex;
+
+                scene.children.forEach(c => {
+                    if(c.material && Array.isArray(c.material)) {
+                        c.material.forEach(m => { if(m.map === tex) m.needsUpdate = true; });
+                    } else if(c.material && c.material.map === tex) {
+                        c.material.needsUpdate = true;
+                    }
+                });
+            }
+        }
+
+        // --- PKG PARSER ---
+        document.getElementById('fileInput').addEventListener('change', e => {
+            const reader = new FileReader();
+            reader.onload = evt => parsePKG(evt.target.result);
+            reader.readAsArrayBuffer(e.target.files[0]);
+        });
+
+        function parsePKG(arrayBuffer) {
+            extractedFiles =[];
+            window.activeManifest.clear();
+            window.geometryCache = {};
+            window.textureCache = {};
+            window.isEntityMapActive = false;
+            document.getElementById('mapScaleContainer').style.display = 'none';
+
+            const u8 = new Uint8Array(arrayBuffer);
+            const view = new DataView(arrayBuffer);
+            
+            if (u8[0] !== 0x70 || u8[1] !== 0x6B || u8[2] !== 0x67 || u8[3] !== 0x00) return alert("Not a valid PKG!");
+            
+            const fileCount = view.getUint32(8, true);
+            let currentName = readFixedString(u8, 48, 32) || "f0.bin";
+            let tocOffset = 80;
+            
+            for (let i = 0; i < fileCount; i++) {
+                let entryOffset = tocOffset + (i * 52);
+                let uncompressedSize = view.getUint32(entryOffset + 4, true);
+                let compressedSize = view.getUint32(entryOffset + 8, true);
+                let dataOffset = view.getUint32(entryOffset + 12, true);
+                let size = compressedSize > 0 ? compressedSize : uncompressedSize;
+                
+                if (size > 0 && dataOffset > 0 && dataOffset + size <= u8.length) {
+                    let safeName = currentName.replace(/[^a-zA-Z0-9._\-\/\\]/g, '');
+                    let fileData = u8.slice(dataOffset, dataOffset + size);
+                    let outData = fileData;
+                    
+                    if (fileData.length >= 3 && fileData[0] === 0x1F && fileData[1] === 0x8B && fileData[2] === 0x08) {
+                        try { outData = pako.inflate(fileData, { windowBits: 31 }); } catch (e) { outData = fileData; }
+                    }
+                    extractedFiles.push({ name: safeName, data: outData, id: i });
+                }
+                currentName = readFixedString(u8, entryOffset + 20, 32) || `f${i + 1}.bin`;
+            }
+
+            document.getElementById('searchInput').value = '';
+            updateFileList();
+            document.getElementById('info-overlay').innerText = `PKG Loaded Successfully.\nFiles extracted: ${extractedFiles.length}`;
+        }
+
+        function getFileIcon(filename) {
+            const ext = filename.split('.').pop().toLowerCase();
+            if(ext === 'rtf') return '🖼️';
+            if(ext === 'csa' || ext === 'msh' || ext === 'ang') return '📦';
+            if(ext === 'ent') return '⚙️';
+            if(ext === 'mnf') return '📋';
+            if(ext === 'pvs') return '👁️';
+            if(ext === 'cmh') return '🪨';
+            if(ext === 'cms') return '📏';
+            if(ext === 'lua') return '📜';
+            return '📄';
+        }
+
+        function updateFileList() {
+            const query = document.getElementById('searchInput').value.toLowerCase();
+            const sortBy = document.getElementById('sortSelect').value;
+            const applyFilter = document.getElementById('mnfFilterToggle').checked;
+
+            let display = extractedFiles.filter(f => {
+                const name = f.name.toLowerCase();
+                if (!name.includes(query)) return false;
+                if (applyFilter && name.endsWith('.ent') && window.activeManifest.size > 0) {
+                    return window.activeManifest.has(name);
+                }
+                return true;
+            });
+
+            display.sort((a, b) => {
+                if (sortBy === 'name') return a.name.localeCompare(b.name);
+                if (sortBy === 'type') return a.name.split('.').pop().localeCompare(b.name.split('.').pop());
+                return a.id - b.id;
+            });
+
+            const list = document.getElementById('fileList');
+            list.innerHTML = '';
+            display.forEach((file) => {
+                const li = document.createElement('li');
+                li.className = 'file-item';
+                li.innerHTML = `<span style="font-size:16px">${getFileIcon(file.name)}</span> <div style="display:flex; flex-direction:column"><span>${file.name}</span><span style="font-size:10px; color:#888;">${(file.data.length/1024).toFixed(1)} KB</span></div>`;
+                li.onclick = () => {
+                    document.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
+                    li.classList.add('active');
+                    processFile(file);
+                };
+                list.appendChild(li);
+            });
+        }
+
+        function processFile(file) {
+            currentFile = file;
+            window.isEntityMapActive = false;
+            document.getElementById('mapScaleContainer').style.display = 'none';
+            renderHexView(file.data);
+            const ext = file.name.split('.').pop().toLowerCase();
+            
+            document.getElementById('meshSettingsPanel').style.display = 'none';
+
+            if (ext === 'rtf') {
+                document.getElementById('tabTex').click();
+                renderActiveTextureFile(file);
+            } else if (ext === 'mnf') {
+                document.getElementById('tab3d').click();
+                parseMNF(file);
+            } else if (ext === 'ent') {
+                document.getElementById('tab3d').click();
+                parseENT(file);
+            } else if (ext === 'cmh') {
+                document.getElementById('tab3d').click();
+                parseCMH(file);
+            } else if (ext === 'pvs') {
+                document.getElementById('tab3d').click();
+                parsePVS(file);
+            } else if (ext === 'cms') {
+                document.getElementById('tab3d').click();
+                parseCMS(file);
+            } else {
+                document.getElementById('tab3d').click();
+                document.getElementById('meshSettingsPanel').style.display = 'flex';
+                customMeshRender(file);
+            }
+        }
+
+        function parseMNF(file) {
+            const text = new TextDecoder().decode(file.data);
+            const lines = text.split('\n');
+            window.activeManifest.clear();
+            lines.forEach(line => {
+                let cleanLine = line.trim().toLowerCase();
+                if(cleanLine && !cleanLine.startsWith('#')) window.activeManifest.add(cleanLine);
+            });
+            document.getElementById('info-overlay').innerText = `📋 Manifest File (.mnf)\nFile: ${file.name}\n\nEntities Tracked: ${window.activeManifest.size}\n(Filter Toggle Automatically Enabled)`;
+            document.getElementById('mnfFilterToggle').checked = true;
+            updateFileList();
+        }
+
+        function parseENT(file) {
+            scene.children.slice().forEach(child => { if(child.isEntity) scene.remove(child); });
+            if (pointCloud) { scene.remove(pointCloud); pointCloud = null; }
+            if(file.data.length < 164) return;
+            const view = new DataView(file.data.buffer, file.data.byteOffset, file.data.byteLength);
+            const u8 = file.data;
+            const x = view.getFloat32(8, true), y = view.getFloat32(12, true), z = view.getFloat32(16, true);
+            const rotX = view.getFloat32(20, true), rotY = view.getFloat32(24, true), rotZ = view.getFloat32(28, true);
+            const scaleX = view.getFloat32(32, true), scaleY = view.getFloat32(36, true), scaleZ = view.getFloat32(40, true);
+            const className = readFixedString(u8, 44, 32);
+            const instanceName = readFixedString(u8, 76, 56);
+            const meshName = readFixedString(u8, 132, 32);
+            let infoText = `⚙️ Entity Configuration (.ent)\nFile: ${file.name}\n==============================\n`;
+            infoText += `Class:    ${className || "Unknown"}\nInstance: ${instanceName || "None"}\nGeometry: ${meshName || "No Mesh Assigned"}\n\n`;
+            infoText += `Pos:   X: ${x.toFixed(3)},  Y: ${y.toFixed(3)},  Z: ${z.toFixed(3)}\n`;
+            infoText += `Rot:   P: ${rotX.toFixed(3)}, Y: ${rotY.toFixed(3)}, R: ${rotZ.toFixed(3)}\n`;
+            infoText += `Scale: X: ${scaleX.toFixed(2)}, Y: ${scaleY.toFixed(2)}, Z: ${scaleZ.toFixed(2)}\n`;
+            document.getElementById('info-overlay').innerText = infoText;
+        }
+
+        function parseCMH(file) {
+            scene.children.slice().forEach(child => { if(child.isEntity) scene.remove(child); });
+            if (pointCloud) { scene.remove(pointCloud); if(pointCloud.geometry) pointCloud.geometry.dispose(); pointCloud = null; }
+            const view = new DataView(file.data.buffer, file.data.byteOffset, file.data.byteLength);
+            if(file.data.length < 64) return;
+            const indexCount = view.getUint32(32, true);
+            const vertexCount = view.getUint32(36, true);
+            const verts =[]; const indices =[];
+            let vOff = 64;
+            for(let i=0; i < vertexCount; i++) {
+                if (vOff + 12 > file.data.byteLength) break;
+                verts.push(view.getFloat32(vOff, true), view.getFloat32(vOff+4, true), view.getFloat32(vOff+8, true));
+                vOff += 12;
+            }
+            let iOff = 64 + (vertexCount * 12);
+            for(let i=0; i < indexCount; i++) {
+                if (iOff + 4 > file.data.byteLength) break;
+                indices.push(view.getUint32(iOff, true));
+                iOff += 4;
+            }
+            if (verts.length > 0) {
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+                geometry.setIndex(indices);
+                geometry.computeVertexNormals(); 
+                const mat = new THREE.MeshStandardMaterial({ color: 0x44aa44, side: THREE.FrontSide, transparent: true, opacity: 0.6, flatShading: true });
+                pointCloud = new THREE.Mesh(geometry, mat);
+                const edgesGeo = new THREE.EdgesGeometry(geometry);
+                const lineMat = new THREE.LineBasicMaterial({ color: 0x00ff88, linewidth: 2 });
+                const wireframeObj = new THREE.LineSegments(edgesGeo, lineMat);
+                pointCloud.add(wireframeObj);
+                scene.add(pointCloud);
+                geometry.computeBoundingBox();
+                const center = new THREE.Vector3(), size = new THREE.Vector3();
+                geometry.boundingBox.getCenter(center); geometry.boundingBox.getSize(size);
+                let dist = Math.max(size.x, size.y, size.z) || 50;
+                camera.position.set(center.x, center.y + dist * 0.5, center.z + dist);
+                controls.target.copy(center); controls.update();
+            }
+            document.getElementById('info-overlay').innerText = `🪨 Collision Hull Rendered (.cmh)\nFile: ${file.name}\nVertices: ${vertexCount}\nIndices: ${indexCount}\nFaces: ${indices.length / 3}\n[Rendered as Flat Solid Hull]`;
+        }
+
+        function parseCMS(file) {
+            if(file.data.length < 147) return;
+            const view = new DataView(file.data.buffer, file.data.byteOffset, file.data.byteLength);
+            const u8 = file.data;
+            const name = readFixedString(u8, 4, 32); const colName = readFixedString(u8, 60, 32); const cmhName = readFixedString(u8, 92, 32);
+            const minX = view.getFloat32(124, true), minY = view.getFloat32(128, true), minZ = view.getFloat32(132, true);
+            const maxX = view.getFloat32(136, true), maxY = view.getFloat32(140, true), maxZ = view.getFloat32(144, true);
+            document.getElementById('info-overlay').innerText = `📏 Collision Setup (.cms)\nFile: ${file.name}\n==============================\nID: ${name}\nObject: ${colName}\nLink: ${cmhName}\n\nAABB Min: ${minX.toFixed(2)}, ${minY.toFixed(2)}, ${minZ.toFixed(2)}\nAABB Max: ${maxX.toFixed(2)}, ${maxY.toFixed(2)}, ${maxZ.toFixed(2)}`;
+        }
+
+        function parsePVS(file) {
+            scene.children.slice().forEach(child => { if(child.isEntity) scene.remove(child); });
+            if (pointCloud) { scene.remove(pointCloud); pointCloud = null; }
+            const text = new TextDecoder().decode(file.data);
+            const lines = text.split('\n');
+            let count = 0;
+            lines.forEach(line => {
+                if(!line.startsWith('ecs PVSCell')) return;
+                const tokens = line.trim().split(/\s+/);
+                if(tokens.length < 11) return;
+                const min = new THREE.Vector3(parseFloat(tokens[5]), parseFloat(tokens[6]), parseFloat(tokens[7]));
+                const max = new THREE.Vector3(parseFloat(tokens[8]), parseFloat(tokens[9]), parseFloat(tokens[10]));
+                const box = new THREE.Box3(min, max);
+                const helper = new THREE.Box3Helper(box, 0x00ffff);
+                helper.isEntity = true;
+                scene.add(helper);
+                count++;
+            });
+            document.getElementById('info-overlay').innerText = `👁️ Potentially Visible Set (.pvs)\nFile: ${file.name}\n\nGenerated ${count} Culling Boxes.`;
+        }
+
+        // --- DEFINITIVE EXACT MESH PARSER WITH REGEX MATERIAL EXTRACTION ---
+        function extractMaterialsRegex(u8, view, file_size) {
+            if (file_size < 132) return[];
+            let mat_count = view.getUint32(124, true);
+            let parsed_materials =[];
+
+            // Decode as latin1 to safely use regex on binary text structures without corrupting bytes
+            let dataString = new TextDecoder('latin1').decode(u8);
+            
+            // Split string perfectly along the 'basic\x00' structs and drop the header chunk
+            let mat_blocks = dataString.split('basic\x00').slice(1);
+
+            for (let m = 0; m < mat_count; m++) {
+                let diff_tex = "Default_Material";
+                if (m < mat_blocks.length) {
+                    // Match the very first .rtf string occurrence in this specific block!
+                    let match = mat_blocks[m].match(/([a-zA-Z0-9_.-]+\.rtf)/i);
+                    if (match) {
+                        diff_tex = match[1];
+                    }
+                }
+                parsed_materials.push(diff_tex);
+            }
+            return parsed_materials;
+        }
+
+        function parseSpongeMesh(file) {
+            const data = file.data;
+            const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+            const file_size = data.byteLength;
+            if (file_size < 132) return null;
+
+            const total_vertices = view.getUint32(8, true);
+            const master_pointer = view.getUint32(16, true);
+            const mesh_type = view.getUint16(20, true);
+            const submesh_count = view.getUint16(22, true);
+
+            if (total_vertices === 0) return null;
+
+            let scale_x = 1.0, scale_y = 1.0, scale_z = 1.0;
+            if (file_size >= 68) {
+                scale_x = view.getFloat32(56, true) / 2.0;
+                scale_y = view.getFloat32(60, true) / 2.0;
+                scale_z = view.getFloat32(64, true) / 2.0;
+            }
+
+            let parsedMaterials = extractMaterialsRegex(data, view, file_size);
+
+            let vertices = [];
+            let uvs = [];
+            let raw_normals =[];
+            let raw_positions =[];
+            let geom_normals = new Float32Array(total_vertices * 3);
+            let submeshes =[];
+
+            if (mesh_type === 2 || mesh_type === 5) {
+                const is_type_5 = (mesh_type === 5);
+                const stride = is_type_5 ? 16 : 20;
+                const header_size = is_type_5 ? 44 : 60;
+                
+                let curr_off = master_pointer + 120;
+                
+                for (let m = 0; m < submesh_count; m++) {
+                    let name = readFixedString(data, curr_off, 16) || `Mesh_${m}`;
+                    let vert_count = view.getUint16(curr_off + 26, true);
+                    if (vert_count === 0 || submesh_count === 1) vert_count = total_vertices;
+                    let mat_idx = data[curr_off + 20];
+
+                    submeshes.push({ name, vert_count, mat_idx, faces:[] });
+                    curr_off += header_size;
+                }
+
+                let v_pos = curr_off;
+                let cx = 0, cy = 0, cz = 0, max_extent = 0;
+                
+                try {
+                    let min_x = view.getFloat32(28, true), min_y = view.getFloat32(32, true), min_z = view.getFloat32(36, true);
+                    let max_x = view.getFloat32(40, true), max_y = view.getFloat32(44, true), max_z = view.getFloat32(48, true);
+                    cx = (max_x + min_x) / 2.0; cy = (max_y + min_y) / 2.0; cz = (max_z + min_z) / 2.0;
+                    let ex = (max_x - min_x) / 2.0, ey = (max_y - min_y) / 2.0, ez = (max_z - min_z) / 2.0;
+                    max_extent = Math.max(ex, ey, ez);
+                } catch(e) {}
+
+                let is_null_flag = new Uint8Array(total_vertices);
+
+                for (let i = 0; i < total_vertices; i++) {
+                    if (v_pos + stride > file_size) break;
+                    
+                    let u = view.getFloat32(v_pos, true), v = view.getFloat32(v_pos + 4, true);
+                    let nx = 0, ny = 0, nz = 0;
+                    if (!is_type_5) {
+                        nx = view.getInt16(v_pos + 8, true);
+                        ny = view.getInt16(v_pos + 10, true);
+                        nz = view.getInt16(v_pos + 12, true);
+                    }
+                    let rOff = is_type_5 ? 10 : 14;
+                    let rx = view.getInt16(v_pos + rOff, true);
+                    let ry = view.getInt16(v_pos + rOff + 2, true);
+                    let rz = view.getInt16(v_pos + rOff + 4, true);
+                    
+                    let x = cx + (rx / 16384.0) * max_extent;
+                    let y = cy + (ry / 16384.0) * max_extent;
+                    let z = cz + (rz / 16384.0) * max_extent;
+
+                    vertices.push(x, y, z);
+                    uvs.push(u, v);
+                    raw_normals.push({x: nx, y: ny, z: nz});
+                    raw_positions.push({x: rx, y: ry, z: rz});
+                    
+                    is_null_flag[i] = (rx === 0 && ry === 0 && rz === 0 && u === 0.0 && v === 0.0) ? 1 : 0;
+                    v_pos += stride;
+                }
+
+                let current_vert_idx = 0;
+                for (let m = 0; m < submeshes.length; m++) {
+                    let mesh = submeshes[m];
+                    let start_v = current_vert_idx;
+                    let end_v = start_v + mesh.vert_count;
+                    if (end_v > total_vertices) end_v = total_vertices;
+                    
+                    let strip_index = 0;
+                    for (let i = start_v; i < end_v - 2; i++) {
+                        if (is_null_flag[i] || is_null_flag[i+1] || is_null_flag[i+2]) {
+                            strip_index = 0;
+                            continue;
+                        }
+
+                        let i1, i2, i3;
+                        if (strip_index % 2 === 0) { i1 = i; i2 = i + 1; i3 = i + 2; } 
+                        else { i1 = i; i2 = i + 2; i3 = i + 1; }
+
+                        let p1 = raw_positions[i1], p2 = raw_positions[i2], p3 = raw_positions[i3];
+                        if (p1.x === p2.x && p1.y === p2.y && p1.z === p2.z) { strip_index++; continue; }
+                        if (p2.x === p3.x && p2.y === p3.y && p2.z === p3.z) { strip_index++; continue; }
+                        if (p1.x === p3.x && p1.y === p3.y && p1.z === p3.z) { strip_index++; continue; }
+
+                        let v1x = vertices[i1*3], v1y = vertices[i1*3+1], v1z = vertices[i1*3+2];
+                        let v2x = vertices[i2*3], v2y = vertices[i2*3+1], v2z = vertices[i2*3+2];
+                        let v3x = vertices[i3*3], v3y = vertices[i3*3+1], v3z = vertices[i3*3+2];
+
+                        let ux = v2x - v1x, uy = v2y - v1y, uz = v2z - v1z;
+                        let vx = v3x - v1x, vy = v3y - v1y, vz = v3z - v1z;
+                        let fnx = (uy*vz) - (uz*vy);
+                        let fny = (uz*vx) - (ux*vz);
+                        let fnz = (ux*vy) - (uy*vx);
+
+                        geom_normals[i1*3] += fnx; geom_normals[i1*3+1] += fny; geom_normals[i1*3+2] += fnz;
+                        geom_normals[i2*3] += fnx; geom_normals[i2*3+1] += fny; geom_normals[i2*3+2] += fnz;
+                        geom_normals[i3*3] += fnx; geom_normals[i3*3+1] += fny; geom_normals[i3*3+2] += fnz;
+                        mesh.faces.push(i1, i2, i3);
+                        
+                        strip_index++;
+                    }
+                    current_vert_idx = end_v;
+                }
+
+            } else if (mesh_type === 6) {
+                let curr_off = master_pointer + 120;
+                
+                for (let m = 0; m < submesh_count; m++) {
+                    let dc_count = view.getUint16(curr_off + 26, true);
+                    let name = readFixedString(data, curr_off, 16) || `Mesh_${m}`;
+                    let mat_idx = data[curr_off + 20];
+                    submeshes.push({ name, dc_count, mat_idx, draw_calls: [], faces:[] });
+                    curr_off += 60;
+                }
+
+                let curr_dc = curr_off;
+                for (let m = 0; m < submesh_count; m++) {
+                    for (let d = 0; d < submeshes[m].dc_count; d++) {
+                        let start_idx = view.getUint16(curr_dc, true);
+                        let count = view.getUint16(curr_dc + 2, true);
+                        submeshes[m].draw_calls.push({ start: start_idx, count: count });
+                        curr_dc += 24;
+                    }
+                }
+
+                let v_pos = curr_dc;
+                for (let i = 0; i < total_vertices; i++) {
+                    if (v_pos + 16 > file_size) break;
+                    
+                    let u = view.getUint8(v_pos + 5) / 128.0;
+                    let v = view.getUint8(v_pos + 6) / 128.0;
+                    let nx = view.getInt8(v_pos + 7);
+                    let ny = view.getInt8(v_pos + 8);
+                    let nz = view.getInt8(v_pos + 9);
+                    
+                    let rx = view.getInt16(v_pos + 10, true);
+                    let ry = view.getInt16(v_pos + 12, true);
+                    let rz = view.getInt16(v_pos + 14, true);
+
+                    let x = (rx / 16384.0) * scale_x;
+                    let y = (ry / 16384.0) * scale_y;
+                    let z = (rz / 16384.0) * scale_z;
+                    
+                    vertices.push(x, y, z);
+                    uvs.push(u, v);
+                    raw_normals.push({x: nx, y: ny, z: nz});
+                    v_pos += 16;
+                }
+                
+                for (let m = 0; m < submeshes.length; m++) {
+                    let mesh = submeshes[m];
+                    for (let d = 0; d < mesh.draw_calls.length; d++) {
+                        let dc = mesh.draw_calls[d];
+                        let start = dc.start;
+                        let count = dc.count;
+                        
+                        if (count < 3 || start + count > total_vertices) continue;
+                        
+                        for (let i = 0; i < count - 2; i++) {
+                            let idx1 = start + i, idx2 = start + i + 1, idx3 = start + i + 2;
+                            let i1, i2, i3;
+                            if (i % 2 === 1) { i1 = idx1; i2 = idx3; i3 = idx2; } else { i1 = idx1; i2 = idx2; i3 = idx3; }
+                            
+                            let v1x = vertices[i1*3], v1y = vertices[i1*3+1], v1z = vertices[i1*3+2];
+                            let v2x = vertices[i2*3], v2y = vertices[i2*3+1], v2z = vertices[i2*3+2];
+                            let v3x = vertices[i3*3], v3y = vertices[i3*3+1], v3z = vertices[i3*3+2];
+                            
+                            if (v1x===v2x && v1y===v2y && v1z===v2z) continue;
+                            if (v2x===v3x && v2y===v3y && v2z===v3z) continue;
+                            if (v1x===v3x && v1y===v3y && v1z===v3z) continue;
+                            
+                            let ux = v2x - v1x, uy = v2y - v1y, uz = v2z - v1z;
+                            let vx = v3x - v1x, vy = v3y - v1y, vz = v3z - v1z;
+                            let fnx = (uy*vz) - (uz*vy);
+                            let fny = (uz*vx) - (ux*vz);
+                            let fnz = (ux*vy) - (uy*vx);
+                            
+                            geom_normals[i1*3] += fnx; geom_normals[i1*3+1] += fny; geom_normals[i1*3+2] += fnz;
+                            geom_normals[i2*3] += fnx; geom_normals[i2*3+1] += fny; geom_normals[i2*3+2] += fnz;
+                            geom_normals[i3*3] += fnx; geom_normals[i3*3+1] += fny; geom_normals[i3*3+2] += fnz;
+                            
+                            mesh.faces.push(i1, i2, i3);
+                        }
+                    }
+                }
+            } else {
+                return null;
+            }
+
+            let normals =[];
+            for (let i = 0; i < vertices.length / 3; i++) {
+                let nx = raw_normals[i].x;
+                let ny = raw_normals[i].y;
+                let nz = raw_normals[i].z;
+                
+                let gnx = geom_normals[i*3];
+                let gny = geom_normals[i*3+1];
+                let gnz = geom_normals[i*3+2];
+
+                if (mesh_type === 2 || mesh_type === 6) {
+                    if (nx === -128 || nx === -16384 || nx === -32768) nx = (gnx > 0) ? Math.abs(nx) - 1 : nx;
+                    if (ny === -128 || ny === -16384 || ny === -32768) ny = (gny > 0) ? Math.abs(ny) - 1 : ny;
+                    if (nz === -128 || nz === -16384 || nz === -32768) nz = (gnz > 0) ? Math.abs(nz) - 1 : nz;
+                }
+                
+                let length = Math.sqrt(nx*nx + ny*ny + nz*nz);
+                if (length > 0.1) {
+                    normals.push(nx/length, ny/length, nz/length);
+                } else {
+                    normals.push(0.0, 1.0, 0.0);
+                }
+            }
+
+            for (let i = 0; i < uvs.length; i += 2) {
+                uvs[i+1] = 1.0 - uvs[i+1];
+            }
+
+            return {
+                mesh_type,
+                total_vertices,
+                submesh_count,
+                vertices,
+                uvs,
+                normals,
+                submeshes,
+                parsedMaterials
+            };
+        }
+
+        function parseGeometryAuto(file) {
+            let parsed = parseSpongeMesh(file);
+            if (!parsed) return null;
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(parsed.vertices, 3));
+            geometry.setAttribute('uv', new THREE.Float32BufferAttribute(parsed.uvs, 2));
+            geometry.setAttribute('normal', new THREE.Float32BufferAttribute(parsed.normals, 3));
+            
+            let allIndices =[];
+            let groupStart = 0;
+            let matNames =[];
+            
+            for (let i = 0; i < parsed.submeshes.length; i++) {
+                let sm = parsed.submeshes[i];
+                if (sm.faces.length === 0) continue;
+                
+                allIndices.push(...sm.faces);
+                geometry.addGroup(groupStart, sm.faces.length, matNames.length);
+                groupStart += sm.faces.length;
+                
+                let texName = parsed.parsedMaterials[sm.mat_idx] || "Default_Material";
+                matNames.push(texName);
+            }
+            
+            if (allIndices.length > 0) {
+                geometry.setIndex(allIndices);
+            }
+            geometry.userData = { matNames };
+            return geometry;
+        }
+
+        // --- ENTITY MAP GENERATOR W/ MESH SUPPORT ---
+        document.getElementById('globalEntScale').addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            document.getElementById('entScaleVal').innerText = val.toFixed(2);
+            scene.children.forEach(child => {
+                if (child.isEntity && child.userData.baseScale) {
+                    child.scale.set(
+                        child.userData.baseScale.x * val,
+                        child.userData.baseScale.y * val,
+                        child.userData.baseScale.z * val
+                    );
+                }
+            });
+        });
+
+        document.getElementById('btnMap').addEventListener('click', () => {
+            document.getElementById('tab3d').click();
+            document.getElementById('mapScaleContainer').style.display = 'flex';
+            
+            scene.children.slice().forEach(child => { if(child.isEntity) scene.remove(child); });
+            if (pointCloud) { scene.remove(pointCloud); pointCloud = null; }
+
+            window.isEntityMapActive = true; 
+            const applyFilter = document.getElementById('mnfFilterToggle').checked;
+            let ents = extractedFiles.filter(f => f.name.toLowerCase().endsWith('.ent'));
+            if (applyFilter && window.activeManifest.size > 0) ents = ents.filter(f => window.activeManifest.has(f.name.toLowerCase()));
+
+            let bounds = new THREE.Box3();
+            let entCount = 0, pvsCount = 0, meshCount = 0;
+            const boxGeo = new THREE.BoxGeometry(2, 2, 2);
+            
+            const mats = {
+                brown: new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.7 }),
+                red: new THREE.MeshStandardMaterial({ color: 0xff3333, roughness: 0.7 }),
+                green: new THREE.MeshStandardMaterial({ color: 0x33ff33, roughness: 0.7 }),
+                magenta: new THREE.MeshStandardMaterial({ color: 0xff00ff, roughness: 0.7 }),
+                yellow: new THREE.MeshStandardMaterial({ color: 0xffff00, roughness: 0.7 }),
+                default: new THREE.MeshStandardMaterial({ color: 0xaaaaaa, roughness: 0.7 })
+            };
+
+            let globalScale = parseFloat(document.getElementById('globalEntScale').value) || 1.0;
+
+            ents.forEach(ent => {
+                if(ent.data.length >= 164) {
+                    const view = new DataView(ent.data.buffer, ent.data.byteOffset, ent.data.byteLength);
+                    const x = view.getFloat32(8, true), y = view.getFloat32(12, true), z = view.getFloat32(16, true);
+                    const rotX = view.getFloat32(20, true), rotY = view.getFloat32(24, true), rotZ = view.getFloat32(28, true);
+                    const scaleX = view.getFloat32(32, true), scaleY = view.getFloat32(36, true), scaleZ = view.getFloat32(40, true);
+                    
+                    const className = readFixedString(ent.data, 44, 32).toLowerCase();
+                    const instanceName = readFixedString(ent.data, 76, 56).toLowerCase();
+                    const meshNameRaw = readFixedString(ent.data, 132, 32).trim().toLowerCase();
+                    
+                    if(!isNaN(x) && Math.abs(x) < 25000 && Math.abs(y) < 25000 && Math.abs(z) < 25000 && (x!==0||y!==0||z!==0)) {
+                        let targetGeom = null;
+                        let possibleNames =[];
+                        
+                        if(meshNameRaw && meshNameRaw !== "none" && meshNameRaw !== "") possibleNames.push(meshNameRaw);
+                        if(className && className !== "none" && className !== "") possibleNames.push(className);
+                        if(instanceName && instanceName !== "none" && instanceName !== "") possibleNames.push(instanceName);
+
+                        let targetFile = null;
+                        let matchedName = null;
+                        
+                        for(let pName of possibleNames) {
+                            let base = pName.replace(/\.msh$/i, '').trim();
+                            if(!base) continue;
+                            
+                            targetFile = extractedFiles.find(f => f.name.toLowerCase() === base + '.msh');
+                            if (targetFile) { matchedName = targetFile.name; break; }
+                            
+                            targetFile = extractedFiles.find(f => f.name.toLowerCase().endsWith('.msh') && f.name.toLowerCase().startsWith(base));
+                            if (targetFile) { matchedName = targetFile.name; break; }
+                            
+                            targetFile = extractedFiles.find(f => f.name.toLowerCase().endsWith('.msh') && f.name.toLowerCase().includes(base));
+                            if (targetFile) { matchedName = targetFile.name; break; }
+                        }
+
+                        if(targetFile && matchedName) {
+                            if(window.geometryCache[matchedName] !== undefined) {
+                                targetGeom = window.geometryCache[matchedName];
+                            } else {
+                                targetGeom = parseGeometryAuto(targetFile);
+                                window.geometryCache[matchedName] = targetGeom; 
+                            }
+                        }
+
+                        let mesh;
+                        let matArray =[];
+
+                        if (targetGeom && targetGeom.userData && targetGeom.userData.matNames) {
+                            for (let i = 0; i < targetGeom.userData.matNames.length; i++) {
+                                let mTex = findTextureForMaterial(targetGeom.userData.matNames[i]);
+                                if (mTex) {
+                                    matArray.push(new THREE.MeshStandardMaterial({
+                                        color: 0xffffff,
+                                        map: mTex,
+                                        transparent: true,
+                                        alphaTest: 0.5,
+                                        side: THREE.FrontSide,
+                                        roughness: 0.9
+                                    }));
+                                } else {
+                                    let fallbackMat = mats.default;
+                                    if(className.includes('tiki') || className.includes('stone') || className.includes('wood')) fallbackMat = mats.brown;
+                                    else if(className.includes('trigger') || className.includes('camera')) fallbackMat = mats.red;
+                                    else if(className.includes('spawn') || className.includes('check')) fallbackMat = mats.green;
+                                    else if(className.includes('boss') || className.includes('enemy') || className.includes('jfish')) fallbackMat = mats.magenta;
+                                    else if(className.includes('coin') || className.includes('pickup') || className.includes('shiny')) fallbackMat = mats.yellow;
+                                    matArray.push(fallbackMat);
+                                }
+                            }
+                        }
+
+                        let finalMat;
+                        if (matArray.length > 0) {
+                            finalMat = matArray; 
+                        } else {
+                            finalMat = mats.default;
+                            if(className.includes('tiki') || className.includes('stone') || className.includes('wood')) finalMat = mats.brown;
+                            else if(className.includes('trigger') || className.includes('camera')) finalMat = mats.red;
+                            else if(className.includes('spawn') || className.includes('check')) finalMat = mats.green;
+                            else if(className.includes('boss') || className.includes('enemy') || className.includes('jfish')) finalMat = mats.magenta;
+                            else if(className.includes('coin') || className.includes('pickup') || className.includes('shiny')) finalMat = mats.yellow;
+                        }
+
+                        if (targetGeom) {
+                            mesh = new THREE.Mesh(targetGeom, finalMat);
+                            meshCount++;
+                        } else {
+                            let boxMat = Array.isArray(finalMat) ? (finalMat[0] || mats.default) : finalMat;
+                            mesh = new THREE.Mesh(boxGeo, boxMat);
+                        }
+
+                        mesh.position.set(x, y, z);
+                        mesh.rotation.set(rotX, rotY, rotZ, 'YXZ');
+                        mesh.userData.baseScale = new THREE.Vector3(scaleX, scaleY, scaleZ);
+                        mesh.scale.set(scaleX * globalScale, scaleY * globalScale, scaleZ * globalScale);
+                        
+                        mesh.isEntity = true;
+                        scene.add(mesh);
+                        bounds.expandByPoint(mesh.position);
+                        entCount++;
+                    }
+                }
+            });
+
+            const pvsFiles = extractedFiles.filter(f => f.name.toLowerCase().endsWith('.pvs'));
+            pvsFiles.forEach(file => {
+                const text = new TextDecoder().decode(file.data);
+                text.split('\n').forEach(line => {
+                    if(!line.startsWith('ecs PVSCell')) return;
+                    const tokens = line.trim().split(/\s+/);
+                    if(tokens.length < 11) return;
+                    const min = new THREE.Vector3(parseFloat(tokens[5]), parseFloat(tokens[6]), parseFloat(tokens[7]));
+                    const max = new THREE.Vector3(parseFloat(tokens[8]), parseFloat(tokens[9]), parseFloat(tokens[10]));
+                    const box = new THREE.Box3(min, max);
+                    const helper = new THREE.Box3Helper(box, 0x0088ff);
+                    helper.isEntity = true;
+                    scene.add(helper);
+                    bounds.expandByPoint(min); bounds.expandByPoint(max);
+                    pvsCount++;
+                });
+            });
+
+            document.getElementById('info-overlay').innerText = `GLOBAL ENTITY MAP\nEntities Plotted: ${entCount}\nModels Loaded: ${meshCount}\nPVS Boxes: ${pvsCount}\nFilter Status: ${applyFilter ? "ON (Manifest Only)" : "OFF (All Package Entities)"}`;
+            if(entCount > 0 || pvsCount > 0) {
+                const center = new THREE.Vector3(), size = new THREE.Vector3();
+                bounds.getCenter(center); bounds.getSize(size);
+                let dist = Math.max(size.x, size.y, size.z);
+                camera.position.set(center.x, center.y + dist*0.5, center.z + dist);
+                controls.target.copy(center); controls.update();
+            }
+        });
+
+        function customMeshRender(file) {
+            if(!file) return;
+            scene.children.slice().forEach(child => { if(child.isEntity) scene.remove(child); });
+            if (pointCloud) { scene.remove(pointCloud); if(pointCloud.geometry) pointCloud.geometry.dispose(); pointCloud = null; }
+            
+            const drawMode = document.getElementById('meshDrawMode').value;
+            let parsed = parseSpongeMesh(file);
+            let infoText = "";
+            
+            if (!parsed) {
+                infoText = `File: ${file.name}\nMode: Perfect Engine\n[!] Could not parse mesh. Unsupported type or corrupted.`;
+                document.getElementById('info-overlay').innerText = infoText;
+                return;
+            }
+            
+            currentVertices = parsed.vertices;
+            currentUVs = parsed.uvs;
+            currentNormals = parsed.normals;
+            window.parsedSubmeshes = parsed.submeshes;
+            window.parsedMaterials = parsed.parsedMaterials;
+            
+            let currentIndices =[];
+            for (let sm of parsed.submeshes) {
+                currentIndices.push(...sm.faces);
+            }
+            window.currentIndices = currentIndices; 
+            
+            let totalFaces = currentIndices.length / 3;
+            infoText = `File: ${file.name}\nMode: Regex Parser (Type ${parsed.mesh_type})\nVertices: ${parsed.total_vertices}\nSubmeshes: ${parsed.submesh_count}\nFaces: ${totalFaces}\n✅ Exact parsing successful.\n`;
+            
+            if (parsed.mesh_type === 2 || parsed.mesh_type === 5) {
+                infoText += `📏 Uniform AABB Applied Natively.\n`;
+            } else if(parsed.mesh_type === 6) {
+                infoText += `📏 Skinned Header Scale Applied Natively.\n`;
+            }
+            
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(currentVertices, 3));
+            if (currentUVs.length === (currentVertices.length / 3) * 2) {
+                geometry.setAttribute('uv', new THREE.Float32BufferAttribute(currentUVs, 2));
+            }
+            if (currentNormals.length === currentVertices.length) {
+                geometry.setAttribute('normal', new THREE.Float32BufferAttribute(currentNormals, 3));
+            }
+            
+            let materials =[];
+            let groupStart = 0;
+            let allIndices =[];
+
+            let matIndex = 0;
+            for (let i = 0; i < parsed.submeshes.length; i++) {
+                let sm = parsed.submeshes[i];
+                if (sm.faces.length > 0) {
+                    allIndices.push(...sm.faces);
+                    geometry.addGroup(groupStart, sm.faces.length, matIndex);
+                    groupStart += sm.faces.length;
+                    matIndex++;
+                    
+                    let texName = parsed.parsedMaterials[sm.mat_idx] || "Default_Material";
+                    let mTex = findTextureForMaterial(texName);
+                    
+                    if (mTex) {
+                        infoText += `\n🎨 Mapped[Grp ${i} | Mat ${sm.mat_idx}]: ${texName}`;
+                    } else {
+                        infoText += `\n🎨 Mapped[Grp ${i} | Mat ${sm.mat_idx}]: [Missing] ${texName}`;
+                    }
+                    
+                    let matProps = { side: THREE.DoubleSide, wireframe: drawMode === 'wireframe' };
+                    if (mTex && drawMode === 'solid') {
+                        matProps.map = mTex;
+                        matProps.color = 0xffffff;
+                        matProps.transparent = true; matProps.alphaTest = 0.5;
+                        matProps.roughness = 0.9;
+                    } else if (drawMode === 'solid') {
+                        matProps.color = 0xcccccc; 
+                        matProps.roughness = 0.6;
+                    } else {
+                        matProps.color = 0x00ff88;
+                    }
+                    
+                    let mat = drawMode === 'solid' ? new THREE.MeshStandardMaterial(matProps) : new THREE.MeshBasicMaterial(matProps);
+                    materials.push(mat);
+                }
+            }
+            
+            if (allIndices.length > 0) geometry.setIndex(allIndices);
+            document.getElementById('info-overlay').innerText = infoText;
+
+            if (drawMode === 'points') {
+                pointCloud = new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0x00FF88, size: 0.5 }));
+            } else {
+                pointCloud = new THREE.Mesh(geometry, materials.length > 0 ? materials : new THREE.MeshBasicMaterial({color:0x00ff88, wireframe: drawMode === 'wireframe'}));
+            }
+
+            scene.add(pointCloud);
+            geometry.computeBoundingBox();
+            const center = new THREE.Vector3(), size = new THREE.Vector3();
+            geometry.boundingBox.getCenter(center); geometry.boundingBox.getSize(size);
+            let dist = Math.max(size.x, size.y, size.z) || 50;
+            
+            if(!window.lastRenderedFile || window.lastRenderedFile !== file.name) {
+                camera.position.set(center.x, center.y + dist * 0.5, center.z + dist);
+                controls.target.copy(center); controls.update();
+                window.lastRenderedFile = file.name;
+            }
+        }
+
+        // --- HEX VIEWER ---
+        function renderHexView(data) {
+            const viewer = document.getElementById('hexViewer'); document.getElementById('hexInspector').style.display = 'none';
+            let html = '<div style="display:flex;"><div>';
+            for (let i = 0; i < Math.min(data.length, 8192); i += 16) {
+                html += `<span class="hex-addr">${i.toString(16).padStart(8, '0').toUpperCase()}</span>`;
+                let hexStr = '', asciiStr = '';
+                for (let j = 0; j < 16; j++) {
+                    if (i+j < data.length) {
+                        const b = data[i+j]; hexStr += `<span class="hex-byte" onclick="inspectHex(${i+j})">${b.toString(16).padStart(2,'0').toUpperCase()}</span> `; asciiStr += (b>=32 && b<=126) ? String.fromCharCode(b) : '.';
+                    } else hexStr += '   ';
+                } html += `<span class="hex-data">${hexStr}</span><span class="hex-ascii">${asciiStr.replace(/</g,"&lt;").replace(/>/g,"&gt;")}</span>\n`;
+            } html += '</div></div>';
+            viewer.innerHTML = html + document.getElementById('hexInspector').outerHTML;
+        }
+
+        window.inspectHex = function(offset) {
+            if(!currentFile) return; const view = new DataView(currentFile.data.buffer, currentFile.data.byteOffset, currentFile.data.byteLength);
+            document.getElementById('hexInspector').style.display = 'block'; document.getElementById('inspOffset').innerText = offset + " (0x" + offset.toString(16).toUpperCase() + ")";
+            try { document.getElementById('inspInt8').innerText = view.getInt8(offset); } catch(e){ document.getElementById('inspInt8').innerText = '-'; }
+            try { document.getElementById('inspInt16').innerText = view.getInt16(offset, true); } catch(e){ document.getElementById('inspInt16').innerText = '-'; }
+            try { document.getElementById('inspInt32').innerText = view.getInt32(offset, true); } catch(e){ document.getElementById('inspInt32').innerText = '-'; }
+            try { document.getElementById('inspFloat').innerText = view.getFloat32(offset, true).toFixed(5); } catch(e){ document.getElementById('inspFloat').innerText = '-'; }
+        };
+    </script>
+</body>
+</html>
